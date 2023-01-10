@@ -40,74 +40,73 @@ def read_parquet_from_blobs_client_list(
 
 def main():
     blobs_list = get_blobs_client_with_prefix(
-    azure_connection_string, container_name, 'well_monthly_production/part')
+        azure_connection_string, container_name, 'well_monthly_production/part')
 
     df = read_parquet_from_blobs_client_list(blobs_list)
     df.reset_index(drop=True, inplace=True)
 
-
     # insert missing production dates rows
     new_df = df.iloc[0:1].copy()
-    for i, row in df[1:].iterrows(): 
+    for i, row in df[1:].iterrows():
         expected_date = new_df['production_date'][len(new_df)-1] + MonthEnd()
         last_well_id = new_df['well_id'][len(new_df)-1]
-        current_date = df['production_date'][i] 
-        current_well_id = df['well_id'][i] 
+        current_date = df['production_date'][i]
+        current_well_id = df['well_id'][i]
         if last_well_id == current_well_id:
-            if expected_date != current_date :
+            if expected_date != current_date:
                 while expected_date != current_date:
-                    new_df.loc[len(new_df)]= {'well_id': current_well_id , 'production_date': expected_date,
-                            'oil_production':0}
+                    new_df.loc[len(new_df)] = {'well_id': current_well_id, 'production_date': expected_date,
+                                               'oil_production': 0}
                     expected_date += MonthEnd()
-                    
+
         new_df.loc[len(new_df)] = df.iloc[i]
 
     # Flagging down months by adding 'down_flag' column
-    new_df['down_flag']=[True if new_df['oil_production'][0] <=25 else False ] + [True if (new_df['oil_production'][i] <= 25 or\
-                                (new_df['oil_production'][i]-new_df['oil_production'][i-1]) <= -30\
-                                ) else False for i in range(1,len(new_df['oil_production']))]
+    new_df['down_flag'] = [True if new_df['oil_production'][0] <= 25 else False] + [True if (new_df['oil_production'][i] <= 25 or
+                                                                                             (new_df['oil_production'][i]-new_df['oil_production'][i-1]) <= -30
+                                                                                             ) else False for i in range(1, len(new_df['oil_production']))]
 
     # selectin unique well ids in array to calculate te downtime for each well separately
     well_ids = new_df.well_id.unique()
-    
 
     # creating the solution dataframe
     solution_df = pd.DataFrame(columns=[
-    'well_id',
-                'downtime_start_date',
-                'downtime_end_date',
-                'downtime_duration'
+        'well_id',
+        'downtime_start_date',
+        'downtime_end_date',
+        'downtime_duration'
     ])
     # will fetch each well data and process it
     for id in well_ids:
         group = new_df[new_df['well_id'] == id].reset_index()
         # will select the down days only to check if the down days are consecutive or not (duration > 1)
-        group = group[group['down_flag']==True]
+        group = group[group['down_flag'] == True]
         group.reset_index(inplace=True)
 
         current_start = group['production_date'][0]
         current_duration = 1
-        expected_next_date= current_start + MonthEnd()
+        expected_next_date = current_start + MonthEnd()
 
-        for i in range(1,len(group)):
+        for i in range(1, len(group)):
             if group['production_date'][i] == expected_next_date:
                 expected_next_date += MonthEnd()
                 current_duration += 1
-            else:            
+            else:
                 dt = {
                     'well_id': group['well_id'][i],
                     'downtime_start_date': current_start.replace(day=1),
-                    'downtime_end_date' : (expected_next_date - MonthEnd() ).replace(day=1),
-                    'downtime_duration':current_duration
+                    'downtime_end_date': (expected_next_date - MonthEnd()).replace(day=1),
+                    'downtime_duration': current_duration
                 }
                 if current_duration > 1:
                     solution_df.loc[len(solution_df)-1] = dt
-                    
+
                 current_start = group['production_date'][i]
-                expected_next_date =group['production_date'][i] + MonthEnd()
+                expected_next_date = group['production_date'][i] + MonthEnd()
                 current_duration = 1
 
     solution_df.to_csv('solution.csv')
 
-if __name__=="__main__":
+
+if __name__ == "__main__":
     main()
