@@ -1,0 +1,4 @@
+azure_storage==0.37.0
+pandas==1.5.2
+pymssql==2.2.7
+pyodbc==4.0.35
